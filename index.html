@@ -176,7 +176,7 @@ body{
 }
 .cpill.active{background:#0a0a0a;border-color:#0a0a0a;color:#fff;}
 
-..menu-body{padding:8px 0;}
+.menu-body{padding:8px 0;}
 .acc-cat{border-bottom:1px solid #f0f0f0;}
 .acc-hd{
   display:flex;align-items:center;gap:12px;
@@ -353,7 +353,6 @@ body{
       <svg class="si" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
       <input class="search-inp" type="text" id="searchInput" placeholder="Search dishes…">
     </div>
-<div class="cat-bar" id="catBar"></div>
   </div>
   <div class="menu-body" id="menuContainer"></div>
   <div class="no-res" id="noRes" style="display:none;">No dishes found.</div>
@@ -675,96 +674,14 @@ function renderMenu(filter=''){
 }
 
 renderMenu();
-  
-/* ── RENDER MENU ── */
-const menuContainer = document.getElementById('menuContainer');
-const noRes = document.getElementById('noRes');
-let ioObserver;
-
-function renderMenu(filter=''){
-  if(ioObserver) ioObserver.disconnect();
-  menuContainer.innerHTML='';
-  const q=filter.trim().toLowerCase();
-  let any=false;
-
-  CATS.forEach(cat=>{
-    const items=MENU.filter(i=>i.c===cat&&i.n.toLowerCase().includes(q));
-    if(!items.length) return;
-    any=true;
-    const sec=document.createElement('div');
-    sec.className='csec';
-    sec.id='sec-'+slug(cat);
-    sec.dataset.cat=cat;
-
-    const hd=document.createElement('div');
-    hd.className='csec-hd';
-    hd.innerHTML=`<span class="csec-name">${cat}</span><span class="csec-cnt">${items.length} items</span>`;
-    sec.appendChild(hd);
-
-    items.forEach(item=>{
-      const row=document.createElement('div');
-      row.className='mitem';
-      row.innerHTML=`
-        <div class="vegbox"></div>
-        <div class="minfo">
-          <div class="mname">${item.n}</div>
-          <div class="mprice">₹${item.p}</div>
-        </div>
-        <div class="ictrl" data-id="${item.id}"></div>`;
-      sec.appendChild(row);
-      renderCtrl(row.querySelector('.ictrl'),item.id);
-    });
-    menuContainer.appendChild(sec);
-  });
-
-  noRes.style.display=any?'none':'block';
-  setupObserver();
-}
-
-function renderCtrl(slot,id){
-  const qty=cart[id]||0;
-  if(qty===0){
-    slot.innerHTML=`<button class="addbtn">ADD</button>`;
-    slot.querySelector('.addbtn').addEventListener('click',()=>{
-      cart[id]=1; renderCtrl(slot,id); updateDot();
-    });
-  } else {
-    slot.innerHTML=`
-      <div class="qctrl">
-        <button class="qbtn minus">−</button>
-        <span class="qnum">${qty}</span>
-        <button class="qbtn plus">+</button>
-      </div>`;
-    slot.querySelector('.minus').addEventListener('click',()=>{
-      cart[id]=(cart[id]||0)-1;
-      if(cart[id]<=0) delete cart[id];
-      renderCtrl(slot,id); updateDot();
-    });
-    slot.querySelector('.plus').addEventListener('click',()=>{
-      cart[id]=(cart[id]||0)+1;
-      renderCtrl(slot,id); updateDot();
-    });
-  }
-}
-
-renderMenu();
 
 /* ── SEARCH ── */
-document.getElementById('searchInput').addEventListener('input',e=>renderMenu(e.target.value));
-
-/* ── INTERSECTION OBSERVER ── */
-function setupObserver(){
-  ioObserver=new IntersectionObserver(entries=>{
-    entries.forEach(entry=>{
-      if(entry.isIntersecting){
-        const cat=entry.target.dataset.cat;
-        if(cat) setActivePill(cat);
-      }
-    });
-  },{rootMargin:'-115px 0px -55% 0px',threshold:0});
-  menuContainer.querySelectorAll('.csec').forEach(sec=>ioObserver.observe(sec));
-}
-
+document.getElementById('searchInput').addEventListener('input',e=>{
+  renderMenu(e.target.value);
+  if(e.target.value.trim()){
+    menuContainer.querySelectorAll('.acc-cat').forEach(a=>a.classList.add('open'));
+  }
+});
 /* ── CART DOT ── */
 const cartDot=document.getElementById('cartDot');
 function updateDot(){
