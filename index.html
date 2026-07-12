@@ -589,35 +589,41 @@ let cart = {};
 function slug(s){return s.toLowerCase().replace(/[^a-z0-9]+/g,'-');}
 
 /* ── TAB SWITCH ── */
-function switchTab(tab){
+function switchTab(tab, scrollToCat){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item[data-tab]').forEach(t=>t.classList.remove('active'));
   document.getElementById('page-'+tab).classList.add('active');
   const el=document.querySelector(`.nav-item[data-tab="${tab}"]`);
   if(el) el.classList.add('active');
   if(tab==='menu'){
-    window.scrollTo(0,0);
-    const mc=document.getElementById('menuContainer');
-    if(mc) mc.parentElement.scrollTop=0;
-    setTimeout(()=>setActivePill(CATS[0]),50);
+    if(scrollToCat){
+      // jump to specific category from quick browse
+      setTimeout(()=>{
+        const sec=document.getElementById('sec-'+slug(scrollToCat));
+        if(sec){
+          sec.scrollIntoView({behavior:'smooth',block:'start'});
+          setActivePill(scrollToCat);
+        }
+      },120);
+    } else {
+      // normal menu open — reset to top, first pill active
+      window.scrollTo(0,0);
+      document.getElementById('menuContainer').scrollTop=0;
+      setTimeout(()=>setActivePill(CATS[0]),50);
+    }
   }
   if(tab==='cart') renderCartPage();
 }
 
 /* ── HOME QUICK BROWSE ── */
-const FEATURED = ["Pizza","Burgers","Punjabi Signature Curries","Chinese Menu","Beverage Menu","Tandoori Starters"];
+const FEATURED = ["Pizza","Burgers","Punjabi Signature Curries","Chinese Menu","Beverage Menu","Tandoori Starters","Chef Signature Collection","Combo Menu","Paneer & Kaju Special","Rice & Biryani","Sandwich","French Fries","Pasta","Snacks & Starters","Maggi","Roti & Breads","Chinese Combos","Papad Corner"];
 const qbGrid = document.getElementById('qbGrid');
 FEATURED.forEach(cat=>{
   const card = document.createElement('div');
   card.className='qb-card';
   card.innerHTML=`<span class="qb-emoji">${CAT_EMOJI[cat]||'🍽️'}</span><div class="qb-name">${cat}</div>`;
   card.addEventListener('click',()=>{
-    switchTab('menu');
-    setTimeout(()=>{
-      const sec=document.getElementById('sec-'+slug(cat));
-      if(sec) sec.scrollIntoView({behavior:'smooth',block:'start'});
-      setActivePill(cat);
-    },80);
+    switchTab('menu', cat);
   });
   qbGrid.appendChild(card);
 });
