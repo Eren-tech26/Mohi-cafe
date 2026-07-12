@@ -6,6 +6,30 @@
 <title>Mohi Cafe — Pandharpur</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+  import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+  // ⚠️ REPLACE THESE VALUES with your own Firebase project config
+  // (Firebase Console → Project Settings → Your apps → Web app → Config)
+  const firebaseConfig = {
+    apiKey: "AIzaSyAtuFtR7SmfYb6QVpEeE6l3VIv6t9phxww",
+    authDomain: "mohicafe-7ef3f.firebaseapp.com",
+    projectId: "mohicafe-7ef3f",
+    storageBucket: "mohicafe-7ef3f.firebasestorage.app",
+    messagingSenderId: "160578134013",
+    appId: "1:160578134013:web:ca6def754cb78a3b260394"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  window.submitOrderToFirebase = async (orderData) => {
+    return await addDoc(collection(db, "orders"), orderData);
+  };
+</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 html{scroll-behavior:smooth;}
@@ -776,16 +800,24 @@ function renderCartPage(){
       <div class="bill-row grand"><span>To Pay</span><span>₹${total}</span></div>
     </div>`;
 
+  const params=new URLSearchParams(window.location.search);
+  const tableFromQR=params.get('table')||'';
+
   const checkoutHtml=`
     <div class="checkout-wrap">
       <label class="flbl" for="custName">Your Name</label>
       <input class="nameinp" id="custName" type="text" placeholder="e.g. Rohan Sharma">
-      <a href="#" id="wabtn" class="wa-btn" target="_blank">
+      <label class="flbl" for="tableNum">Table Number</label>
+      <input class="nameinp" id="tableNum" type="number" min="1" placeholder="e.g. 4" value="${tableFromQR}">
+      <button id="placeOrderBtn" class="wa-btn" style="background:#0a0a0a;">
+        Confirm Order
+      </button>
+      <p class="orhint" id="orderStatusMsg"></p>
+      <a href="#" id="wabtn" class="wa-btn" target="_blank" style="margin-top:10px;">
         <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-        Order on WhatsApp
+        Or Order on WhatsApp
       </a>
       <p class="orhint">Sends your order to +91 88880 50804</p>
-      <a href="https://www.zomato.com/pandharpur/cafe-mohi-pandharpur-locality/order" class="zom-btn" target="_blank">Order on Zomato</a>
     </div>`;
 
   body.innerHTML=itemsHtml+billHtml+checkoutHtml;
@@ -818,6 +850,46 @@ function renderCartPage(){
       n.classList.add('err');
       n.focus();
       setTimeout(()=>n.classList.remove('err'),1500);
+    }
+  });
+
+  const placeBtn=body.querySelector('#placeOrderBtn');
+  if(placeBtn) placeBtn.addEventListener('click', async ()=>{
+    const nameEl=document.getElementById('custName');
+    const tableEl=document.getElementById('tableNum');
+    const statusEl=document.getElementById('orderStatusMsg');
+    const name=nameEl.value.trim();
+    const table=tableEl.value.trim();
+
+    if(!name){ nameEl.classList.add('err'); nameEl.focus(); setTimeout(()=>nameEl.classList.remove('err'),1500); return; }
+    if(!table){ tableEl.classList.add('err'); tableEl.focus(); setTimeout(()=>tableEl.classList.remove('err'),1500); return; }
+
+    const orderItems=getItems().map(i=>({name:i.n, price:i.p, qty:i.qty}));
+    const total=orderItems.reduce((s,i)=>s+i.qty*i.price,0);
+
+    placeBtn.disabled=true;
+    placeBtn.textContent='Placing order...';
+
+    try{
+      await window.submitOrderToFirebase({
+        customerName:name,
+        tableNumber:table,
+        items:orderItems,
+        total:total,
+        status:'pending',
+        createdAt: Date.now()
+      });
+      statusEl.textContent='✅ Order placed! Staff has been notified.';
+      statusEl.style.color='#1b7a2e';
+      cart={};
+      updateDot();
+      setTimeout(()=>renderCartPage(),1800);
+    }catch(err){
+      console.error(err);
+      statusEl.textContent='⚠️ Could not place order. Try WhatsApp instead.';
+      statusEl.style.color='#e53935';
+      placeBtn.disabled=false;
+      placeBtn.textContent='Confirm Order';
     }
   });
 }
