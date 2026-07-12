@@ -176,32 +176,32 @@ body{
 }
 .cpill.active{background:#0a0a0a;border-color:#0a0a0a;color:#fff;}
 
-.menu-body{padding-bottom:8px;}
-
-.csec{scroll-margin-top:116px;}
-.csec-hd{
-  padding:18px 16px 10px;
-  display:flex;align-items:baseline;gap:8px;
-  border-top:7px solid #f7f7f7;
+..menu-body{padding:8px 0;}
+.acc-cat{border-bottom:1px solid #f0f0f0;}
+.acc-hd{
+  display:flex;align-items:center;gap:12px;
+  padding:16px;cursor:pointer;
+  background:#fff;border:none;width:100%;text-align:left;
+  font-family:'Inter',sans-serif;-webkit-tap-highlight-color:transparent;
 }
-.csec-hd:first-child{border-top:none;}
-.csec-name{font-size:17px;font-weight:800;color:#0a0a0a;letter-spacing:-0.3px;}
-.csec-cnt{font-size:12px;color:#c0c0c0;font-weight:500;}
-
+.acc-hd:active{background:#fafafa;}
+.acc-emoji{font-size:22px;width:32px;text-align:center;flex-shrink:0;}
+.acc-info{flex:1;}
+.acc-name{font-size:15px;font-weight:700;color:#0a0a0a;letter-spacing:-0.2px;}
+.acc-cnt{font-size:11px;color:#bbb;font-weight:500;margin-top:1px;}
+.acc-arrow{
+  width:18px;height:18px;stroke:#bbb;fill:none;
+  stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;
+  flex-shrink:0;transition:transform 0.2s;
+}
+.acc-cat.open .acc-arrow{transform:rotate(180deg);}
+.acc-body{display:none;background:#fafafa;border-top:1px solid #f0f0f0;}
+.acc-cat.open .acc-body{display:block;}
 .mitem{
   display:flex;align-items:center;gap:12px;
-  padding:13px 16px;border-bottom:1px solid #f8f8f8;
+  padding:13px 16px;border-bottom:1px solid #f0f0f0;background:#fff;
 }
-.vegbox{
-  width:16px;height:16px;min-width:16px;
-  border:1.5px solid #27ae60;border-radius:3px;
-  display:flex;align-items:center;justify-content:center;
-}
-.vegbox::after{content:'';width:7px;height:7px;background:#27ae60;border-radius:50%;}
-.minfo{flex:1;min-width:0;}
-.mname{font-size:14px;font-weight:600;color:#0a0a0a;line-height:1.3;margin-bottom:4px;}
-.mprice{font-size:14px;font-weight:700;color:#0a0a0a;}
-
+.mitem:last-child{border-bottom:none;}
 .addbtn{
   border:1.5px solid #0a0a0a;background:#fff;color:#0a0a0a;
   border-radius:8px;padding:7px 15px;font-size:13px;font-weight:700;
@@ -353,7 +353,7 @@ body{
       <svg class="si" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
       <input class="search-inp" type="text" id="searchInput" placeholder="Search dishes…">
     </div>
-    <div class="cat-bar" id="catBar"></div>
+<div class="cat-bar" id="catBar"></div>
   </div>
   <div class="menu-body" id="menuContainer"></div>
   <div class="no-res" id="noRes" style="display:none;">No dishes found.</div>
@@ -596,25 +596,20 @@ function switchTab(tab, scrollToCat){
   const el=document.querySelector(`.nav-item[data-tab="${tab}"]`);
   if(el) el.classList.add('active');
   if(tab==='menu'){
+    window.scrollTo(0,0);
     if(scrollToCat){
-      // jump to specific category from quick browse
       setTimeout(()=>{
-        const sec=document.getElementById('sec-'+slug(scrollToCat));
-        if(sec){
-          sec.scrollIntoView({behavior:'smooth',block:'start'});
-          setActivePill(scrollToCat);
+        const acc=menuContainer.querySelector(`.acc-cat[data-cat="${scrollToCat}"]`);
+        if(acc){
+          menuContainer.querySelectorAll('.acc-cat.open').forEach(a=>a.classList.remove('open'));
+          acc.classList.add('open');
+          setTimeout(()=>acc.scrollIntoView({behavior:'smooth',block:'start'}),50);
         }
-      },120);
-    } else {
-      // normal menu open — reset to top, first pill active
-      window.scrollTo(0,0);
-      document.getElementById('menuContainer').scrollTop=0;
-      setTimeout(()=>setActivePill(CATS[0]),50);
+      },80);
     }
   }
   if(tab==='cart') renderCartPage();
 }
-
 /* ── HOME QUICK BROWSE ── */
 const FEATURED = ["Pizza","Burgers","Punjabi Signature Curries","Chinese Menu","Beverage Menu","Tandoori Starters","Chef Signature Collection","Combo Menu","Paneer & Kaju Special","Rice & Biryani","Sandwich","French Fries","Pasta","Snacks & Starters","Maggi","Roti & Breads","Chinese Combos","Papad Corner"];
 const qbGrid = document.getElementById('qbGrid');
@@ -628,27 +623,59 @@ FEATURED.forEach(cat=>{
   qbGrid.appendChild(card);
 });
 
-/* ── CATEGORY PILL BAR ── */
-const catBar = document.getElementById('catBar');
-CATS.forEach((cat,idx)=>{
-  const btn=document.createElement('button');
-  btn.className='cpill'+(idx===0?' active':'');
-  btn.textContent=cat;
-  btn.dataset.cat=cat;
-  btn.addEventListener('click',()=>{
-    setActivePill(cat);
-    const sec=document.getElementById('sec-'+slug(cat));
-    if(sec) sec.scrollIntoView({behavior:'smooth',block:'start'});
-  });
-  catBar.appendChild(btn);
-});
+/* ── ACCORDION MENU ── */
+const menuContainer = document.getElementById('menuContainer');
+const noRes = document.getElementById('noRes');
 
-function setActivePill(cat){
-  catBar.querySelectorAll('.cpill').forEach(b=>b.classList.toggle('active',b.dataset.cat===cat));
-  const active=catBar.querySelector(`.cpill[data-cat="${cat}"]`);
-  if(active) active.scrollIntoView({inline:'center',behavior:'smooth'});
+function renderMenu(filter=''){
+  menuContainer.innerHTML='';
+  const q=filter.trim().toLowerCase();
+  let any=false;
+  CATS.forEach(cat=>{
+    const items=MENU.filter(i=>i.c===cat&&i.n.toLowerCase().includes(q));
+    if(!items.length) return;
+    any=true;
+    const acc=document.createElement('div');
+    acc.className='acc-cat';
+    acc.dataset.cat=cat;
+    const hd=document.createElement('button');
+    hd.className='acc-hd';
+    hd.innerHTML=`
+      <span class="acc-emoji">${CAT_EMOJI[cat]||'🍽️'}</span>
+      <div class="acc-info">
+        <div class="acc-name">${cat}</div>
+        <div class="acc-cnt">${items.length} items</div>
+      </div>
+      <svg class="acc-arrow" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>`;
+    hd.addEventListener('click',()=>{
+      const isOpen=acc.classList.contains('open');
+      menuContainer.querySelectorAll('.acc-cat.open').forEach(a=>a.classList.remove('open'));
+      if(!isOpen) acc.classList.add('open');
+    });
+    acc.appendChild(hd);
+    const body=document.createElement('div');
+    body.className='acc-body';
+    items.forEach(item=>{
+      const row=document.createElement('div');
+      row.className='mitem';
+      row.innerHTML=`
+        <div class="vegbox"></div>
+        <div class="minfo">
+          <div class="mname">${item.n}</div>
+          <div class="mprice">₹${item.p}</div>
+        </div>
+        <div class="ictrl" data-id="${item.id}"></div>`;
+      body.appendChild(row);
+      renderCtrl(row.querySelector('.ictrl'),item.id);
+    });
+    acc.appendChild(body);
+    menuContainer.appendChild(acc);
+  });
+  noRes.style.display=any?'none':'block';
 }
 
+renderMenu();
+  
 /* ── RENDER MENU ── */
 const menuContainer = document.getElementById('menuContainer');
 const noRes = document.getElementById('noRes');
