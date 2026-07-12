@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mohi Cafe — Admin Panel</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+  import { getFirestore, collection, onSnapshot, doc, updateDoc, orderBy, query } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+  // ⚠️ REPLACE THESE VALUES with your own Firebase project config (same as customer.html)
+  const firebaseConfig = {
+    apiKey: "AIzaSyAtuFtR7SmfYb6QVpEeE6l3VIv6t9phxww",
+    authDomain: "mohicafe-7ef3f.firebaseapp.com",
+    projectId: "mohicafe-7ef3f",
+    storageBucket: "mohicafe-7ef3f.firebasestorage.app",
+    messagingSenderId: "160578134013",
+    appId: "1:160578134013:web:ca6def754cb78a3b260394"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  window.firebaseLogin = async (email, password) => {
+    return await signInWithEmailAndPassword(auth, email, password);
+  };
+  window.firebaseLogout = () => signOut(auth);
+
+  onAuthStateChanged(auth, (user) => {
+    if(user){
+      document.getElementById('loginScreen').style.display='none';
+      document.getElementById('adminScreen').style.display='block';
+      startOrderListener();
+    } else {
+      document.getElementById('loginScreen').style.display='flex';
+      document.getElementById('adminScreen').style.display='none';
+    }
+  });
+
+  function startOrderListener(){
+    const q = query(collection(db,'orders'), orderBy('createdAt','desc'));
+    onSnapshot(q, (snapshot)=>{
+      const orders = [];
+      snapshot.forEach(docSnap=>{
+        orders.push({id:docSnap.id, ...docSnap.data()});
+      });
+      window.renderOrders(orders);
+    });
+  }
+
+  // Update order status, stamping the relevant timestamp as it moves through the flow
+  window.updateOrderStatus = async (orderId, newStatus) => {
+    const updates = { status: newStatus };
+    if(newStatus === 'preparing') updates.preparingAt = Date.now();
+    if(newStatus === 'ready') updates.readyAt = Date.now();
+    if(newStatus === 'served') updates.servedAt = Date.now();
+    if(newStatus === 'cancelled') updates.cancelledAt = Date.now();
+    await updateDoc(doc(db,'orders',orderId), updates);
+  };
+
+  // Cancel an order (kept in Firestore/History, just flagged)
+  window.cancelOrder = async (orderId) => {
+    await updateDoc(doc(db,'orders',orderId), { status:'cancelled', cancelledAt: Date.now() });
+  };
+
+  // Admin sets/updates how many minutes an order will take; also stamps preparingAt
+  // so the customer-facing countdown has a start point.
+  window.setEstimatedTime = async (orderId, minutes) => {
+    await updateDoc(doc(db,'orders',orderId), {
+      estimatedMinutes: minutes,
+      preparingAt: Date.now()
+    });
+  };
+
+  // Admin adds extra items to an existing order (merges into items[] + recalculates total)
+  window.addItemsToOrder = async (orderId, items, total) => {
+    await updateDoc(doc(db,'orders',orderId), { items, total });
+  };
+</script>
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+body{font-family:'Inter',system-ui,sans-serif;background:#f7f7f7;color:#0a0a0a;min-height:100vh;}
+
+/* ── LOGIN ── */
+#loginScreen{
+  min-height:100vh;display:flex;align-items:center;justify-content:center;
+  padding:24px;background:#0a0a0a;
+}
+.login-card{
+  background:#fff;border-radius:20px;padding:36px 28px;max-width:360px;width:100%;
+}
+.login-title{font-size:24px;font-weight:900;margin-bottom:6px;letter-spacing:-0.5px;}
+.login-sub{font-size:13px;color:#999;margin-bottom:24px;}
+.login-inp{
+  width:100%;border:1.5px solid #e8e8e8;border-radius:10px;padding:13px 15px;
+  font-size:14px;font-family:'Inter',sans-serif;margin-bottom:12px;outline:none;
+}
+.login-inp:focus{border-color:#0a0a0a;}
+.login-btn{
+  width:100%;background:#0a0a0a;color:#fff;border:none;border-radius:10px;
+  padding:14px;font-size:14px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;
+}
+.login-err{color:#e53935;font-size:12.5px;margin-top:10px;display:none;}
+
+/* ── ADMIN SCREEN ── */
+#adminScreen{display:none;}
+.admin-header{
+  background:#0a0a0a;color:#fff;padding:18px 20px;
+  display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:50;
+}
+.admin-title{font-size:18px;font-weight:800;letter-spacing:-0.3px;}
+.admin-sub{font-size:11px;color:#999;margin-top:2px;}
+.logout-btn{
+  background:rgba(255,255,255,0.1);color:#fff;border:none;border-radius:8px;
+  padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;
+}
+
+.filter-bar{
+  display:flex;gap:8px;padding:14px 20px;background:#fff;border-bottom:1px solid #eee;
+  overflow-x:auto;
+}
+.filter-pill{
+  flex-shrink:0;padding:7px 14px;border-radius:20px;font-size:12.5px;font-weight:600;
+  border:1.5px solid #e8e8e8;background:#fff;color:#777;cursor:pointer;white-space:nowrap;
+}
+.filter-pill.active{background:#0a0a0a;border-color:#0a0a0a;color:#fff;}
+
+.orders-wrap{padding:16px;display:grid;gap:14px;grid-template-columns:1fr;}
+@media(min-width:720px){
+  .orders-wrap{grid-template-columns:repeat(2,1fr);}
+}
+@media(min-width:1100px){
+  .orders-wrap{grid-template-columns:repeat(3,1fr);}
+}
+
+.order-card{
+  background:#fff;border-radius:16px;padding:18px;border:1px solid #eee;
+  box-shadow:0 2px 10px rgba(0,0,0,0.03);
+}
+.order-card.is-cancelled{opacity:0.6;}
+.order-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;}
+.order-table{font-size:22px;font-weight:900;color:#0a0a0a;}
+.order-table-lbl{font-size:10px;color:#bbb;font-weight:700;letter-spacing:1px;text-transform:uppercase;}
+.order-time{font-size:11px;color:#bbb;text-align:right;}
+.order-status{
+  font-size:10px;font-weight:800;letter-spacing:0.5px;text-transform:uppercase;
+  padding:4px 10px;border-radius:20px;display:inline-block;margin-top:4px;
+}
+.status-pending{background:#fff4e5;color:#c9820a;}
+.status-preparing{background:#e5f0ff;color:#2563eb;}
+.status-ready{background:#fff0e0;color:#d2691e;}
+.status-served{background:#e5ffe9;color:#1b7a2e;}
+.status-cancelled{background:#ffe5e5;color:#c0392b;}
+
+.order-name{font-size:13.5px;color:#555;margin-bottom:10px;font-weight:600;}
+.order-items{border-top:1px dashed #eee;padding-top:10px;margin-bottom:12px;}
+.order-item-row{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;color:#333;}
+.order-total{
+  display:flex;justify-content:space-between;font-size:15px;font-weight:800;
+  border-top:1px dashed #eee;padding-top:10px;margin-bottom:14px;
+}
+.status-btns{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px;}
+.status-btn{
+  padding:9px;border-radius:8px;font-size:12px;font-weight:700;
+  border:1.5px solid #e8e8e8;background:#fff;color:#555;cursor:pointer;font-family:'Inter',sans-serif;
+}
+.status-btn.active{background:#0a0a0a;border-color:#0a0a0a;color:#fff;}
+
+.time-row{
+  display:flex;align-items:center;gap:8px;margin-bottom:10px;
+  background:#f7f7f7;border-radius:10px;padding:8px 10px;
+}
+.time-lbl{font-size:11px;color:#888;font-weight:600;flex:1;}
+.time-inp{
+  width:52px;border:1.5px solid #e8e8e8;border-radius:6px;padding:6px 6px;
+  font-size:12px;font-family:'Inter',sans-serif;text-align:center;outline:none;
+}
+.time-inp:focus{border-color:#0a0a0a;}
+.time-save-btn{
+  border:none;background:#0a0a0a;color:#fff;border-radius:6px;
+  padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;
+}
+.time-remain{font-size:11px;font-weight:700;color:#d2691e;white-space:nowrap;}
+
+.action-row{display:flex;gap:8px;}
+.action-btn{
+  flex:1;padding:9px;border-radius:8px;font-size:12px;font-weight:700;
+  border:1.5px solid #e8e8e8;background:#fff;color:#333;cursor:pointer;font-family:'Inter',sans-serif;
+  display:flex;align-items:center;justify-content:center;gap:5px;
+}
+.cancel-btn{color:#e53935;border-color:#ffd6d6;background:#fff8f8;}
+
+.empty-state{text-align:center;padding:80px 20px;color:#ccc;font-size:14px;grid-column:1/-1;}
+
+/* ── ADD ITEMS MODAL ── */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;
+  display:none;align-items:flex-end;justify-content:center;
+}
+.modal-overlay.open{display:flex;}
+.modal-card{
+  background:#fff;border-radius:20px 20px 0 0;width:100%;max-width:480px;
+  max-height:80vh;display:flex;flex-direction:column;
+}
+@media(min-width:600px){
+  .modal-overlay{align-items:center;}
+  .modal-card{border-radius:20px;max-height:70vh;}
+}
+.modal-hd{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:18px 18px 12px;border-bottom:1px solid #f0f0f0;
+}
+.modal-title{font-size:15px;font-weight:800;}
+.modal-close{
+  border:none;background:#f5f5f5;width:30px;height:30px;border-radius:50%;
+  font-size:14px;cursor:pointer;color:#777;
+}
+.modal-search{
+  margin:12px 18px;background:#f5f5f5;border:none;border-radius:10px;
+  padding:11px 14px;font-size:14px;font-family:'Inter',sans-serif;outline:none;
+}
+.modal-list{flex:1;overflow-y:auto;padding:0 18px;}
+.modal-item{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:11px 0;border-bottom:1px solid #f5f5f5;gap:10px;
+}
+.modal-item-name{font-size:13.5px;font-weight:600;}
+.modal-item-price{font-size:11.5px;color:#bbb;margin-top:2px;}
+.madd-btn{
+  border:1.5px solid #0a0a0a;background:#fff;color:#0a0a0a;
+  border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;
+  cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;
+}
+.mqctrl{display:flex;align-items:center;background:#0a0a0a;border-radius:8px;overflow:hidden;}
+.mqbtn{background:none;border:none;color:#fff;width:28px;height:30px;font-size:15px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;}
+.mqnum{color:#fff;font-size:12px;font-weight:700;min-width:18px;text-align:center;}
+.modal-footer{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:14px 18px;border-top:1px solid #f0f0f0;
+}
+.modal-total{font-size:13px;font-weight:700;color:#555;}
+.modal-add-btn{
+  background:#0a0a0a;color:#fff;border:none;border-radius:10px;
+  padding:12px 22px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;
+}
+</style>
+</head>
+<body>
+
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="login-title">Mohi Cafe Admin</div>
+    <div class="login-sub">Staff login to view live orders</div>
+    <input class="login-inp" id="loginEmail" type="email" placeholder="Email">
+    <input class="login-inp" id="loginPass" type="password" placeholder="Password">
+    <button class="login-btn" id="loginBtn">Log In</button>
+    <div class="login-err" id="loginErr">Invalid email or password.</div>
+  </div>
+</div>
+
+<div id="adminScreen">
+  <div class="admin-header">
+    <div>
+      <div class="admin-title">Live Orders</div>
+      <div class="admin-sub" id="orderCount">0 orders</div>
+    </div>
+    <button class="logout-btn" id="logoutBtn">Log Out</button>
+  </div>
+
+  <div class="filter-bar">
+    <button class="filter-pill active" data-filter="all">Active</button>
+    <button class="filter-pill" data-filter="pending">Pending</button>
+    <button class="filter-pill" data-filter="preparing">Preparing</button>
+    <button class="filter-pill" data-filter="ready">Ready</button>
+    <button class="filter-pill" data-filter="history">History</button>
+  </div>
+
+  <div class="orders-wrap" id="ordersWrap"></div>
+</div>
+
+<!-- ── ADD ITEMS MODAL ── -->
+<div class="modal-overlay" id="addItemsModal">
+  <div class="modal-card">
+    <div class="modal-hd">
+      <div class="modal-title">Add Items — Table <span id="modalTableNum"></span></div>
+      <button class="modal-close" id="modalCloseBtn">✕</button>
+    </div>
+    <input class="modal-search" id="modalSearch" placeholder="Search menu…">
+    <div class="modal-list" id="modalList"></div>
+    <div class="modal-footer">
+      <div class="modal-total" id="modalTotal">₹0 selected</div>
+      <button class="modal-add-btn" id="modalAddBtn">Add to Order</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── MENU DATA (for "Add Items" — mirrors customer.html) ── */
+const ADMIN_MENU = [
+  {n:"Burger Duo",p:339,c:"Combo Menu"},{n:"Family Lite",p:849,c:"Combo Menu"},{n:"Student Special",p:449,c:"Combo Menu"},
+  {n:"Mohi Special Kaju Paneer Toofani",p:419,c:"Chef Signature Collection"},{n:"Paneer Angara",p:419,c:"Chef Signature Collection"},{n:"Paneer Lajawab",p:379,c:"Chef Signature Collection"},{n:"Paneer Titanic Kofta",p:449,c:"Chef Signature Collection"},
+  {n:"Amritsari Paneer Masala",p:369,c:"Punjabi Signature Curries"},{n:"Baby Corn Handi",p:279,c:"Punjabi Signature Curries"},{n:"Baby Corn Kadhai",p:279,c:"Punjabi Signature Curries"},{n:"Baby Corn Masala",p:239,c:"Punjabi Signature Curries"},{n:"Dahi Angara",p:369,c:"Punjabi Signature Curries"},{n:"Dal Fry",p:149,c:"Punjabi Signature Curries"},{n:"Dal Tadka",p:159,c:"Punjabi Signature Curries"},{n:"Kaju Delight Masala",p:369,c:"Punjabi Signature Curries"},{n:"Mix Veg Curry",p:239,c:"Punjabi Signature Curries"},{n:"Mushroom Curry",p:299,c:"Punjabi Signature Curries"},{n:"Mushroom Kadhai",p:279,c:"Punjabi Signature Curries"},{n:"Mushroom Masala",p:259,c:"Punjabi Signature Curries"},{n:"Mushroom Tikka Masala",p:339,c:"Punjabi Signature Curries"},{n:"Paneer Handi (Family Pack)",p:879,c:"Punjabi Signature Curries"},{n:"Paneer Kadhai",p:339,c:"Punjabi Signature Curries"},{n:"Paneer Kofta Curry",p:339,c:"Punjabi Signature Curries"},{n:"Paneer Patiala",p:389,c:"Punjabi Signature Curries"},{n:"Veg Chandigarh Special",p:389,c:"Punjabi Signature Curries"},{n:"Veg Handi (Family Pack)",p:749,c:"Punjabi Signature Curries"},{n:"Veg Kadhai",p:329,c:"Punjabi Signature Curries"},{n:"Veg Kolhapuri",p:269,c:"Punjabi Signature Curries"},{n:"Veg Malvani",p:299,c:"Punjabi Signature Curries"},{n:"Veg Maratha",p:299,c:"Punjabi Signature Curries"},{n:"Veg Tawa Masala",p:299,c:"Punjabi Signature Curries"},
+  {n:"Aloo Matar",p:229,c:"Paneer & Kaju Special"},{n:"Cheese Butter Masala",p:389,c:"Paneer & Kaju Special"},{n:"Kaju Curry",p:279,c:"Paneer & Kaju Special"},{n:"Kaju Masala",p:299,c:"Paneer & Kaju Special"},{n:"Kaju Paneer Masala",p:359,c:"Paneer & Kaju Special"},{n:"Kaju Singapore Masala",p:389,c:"Paneer & Kaju Special"},{n:"Matar Paneer",p:239,c:"Paneer & Kaju Special"},{n:"Palak Paneer",p:239,c:"Paneer & Kaju Special"},{n:"Paneer Bhurji",p:369,c:"Paneer & Kaju Special"},{n:"Paneer Butter Masala",p:299,c:"Paneer & Kaju Special"},{n:"Paneer Chingari",p:369,c:"Paneer & Kaju Special"},{n:"Paneer Korma",p:279,c:"Paneer & Kaju Special"},{n:"Paneer Lajawab Special",p:379,c:"Paneer & Kaju Special"},{n:"Paneer Masala",p:259,c:"Paneer & Kaju Special"},{n:"Paneer Rajwadi",p:339,c:"Paneer & Kaju Special"},{n:"Paneer Rangeela",p:339,c:"Paneer & Kaju Special"},{n:"Paneer Tikka Masala",p:329,c:"Paneer & Kaju Special"},
+  {n:"Dal Khichdi",p:239,c:"Rice & Biryani"},{n:"Half Jeera Rice",p:99,c:"Rice & Biryani"},{n:"Jeera Rice",p:139,c:"Rice & Biryani"},{n:"Kaju Pulao",p:239,c:"Rice & Biryani"},{n:"Masala Rice",p:199,c:"Rice & Biryani"},{n:"Plain Rice",p:129,c:"Rice & Biryani"},{n:"Veg Biryani",p:239,c:"Rice & Biryani"},{n:"Veg Pulao",p:239,c:"Rice & Biryani"},
+  {n:"Butter Roasted Papad",p:69,c:"Papad Corner"},{n:"Fried Papad",p:39,c:"Papad Corner"},{n:"Masala Papad",p:59,c:"Papad Corner"},{n:"Roasted Papad",p:39,c:"Papad Corner"},
+  {n:"Cheese Burst Pizza (10 Inch)",p:479,c:"Pizza"},{n:"Chillycorn Cheese Pizza",p:259,c:"Pizza"},{n:"Italian Pizza",p:309,c:"Pizza"},{n:"Margherita Pizza",p:219,c:"Pizza"},{n:"Mix Veg Cheese Pizza",p:249,c:"Pizza"},{n:"Mohi Loaded Pizza",p:339,c:"Pizza"},{n:"Mohi Maharaja Pizza",p:309,c:"Pizza"},{n:"Mushroom Cheese Pizza",p:259,c:"Pizza"},{n:"Paneer Cheese Pizza",p:259,c:"Pizza"},{n:"Paneer Makhani Pizza",p:299,c:"Pizza"},{n:"Paneer Tandoori Pizza",p:299,c:"Pizza"},{n:"Pasta Pizza",p:289,c:"Pizza"},{n:"Sweetcorn Cheese Pizza",p:249,c:"Pizza"},
+  {n:"Manchurian + Fried Rice",p:219,c:"Chinese Combos"},{n:"Manchurian + Noodles",p:229,c:"Chinese Combos"},
+  {n:"Cheese Burger",p:159,c:"Burgers"},{n:"Crunchy Burger",p:219,c:"Burgers"},{n:"Grill Cheese Burger",p:219,c:"Burgers"},{n:"Jumbo Burger",p:219,c:"Burgers"},{n:"Mohi Special Tandoori Burger",p:219,c:"Burgers"},{n:"Paneer Burger",p:189,c:"Burgers"},{n:"Veg Burger",p:129,c:"Burgers"},
+  {n:"Chocolate Sandwich",p:149,c:"Sandwich"},{n:"Grill Cheese Sandwich",p:159,c:"Sandwich"},{n:"Grill Double Cheese Sandwich",p:179,c:"Sandwich"},{n:"Grill Sandwich",p:129,c:"Sandwich"},{n:"Jalapeno Cheese Sandwich",p:179,c:"Sandwich"},{n:"Paneer Tandoori Sandwich",p:189,c:"Sandwich"},
+  {n:"French Fries",p:139,c:"French Fries"},{n:"French Fries With Cheese",p:159,c:"French Fries"},{n:"Peri Peri Cheese Fries",p:189,c:"French Fries"},{n:"Peri Peri Fries",p:159,c:"French Fries"},
+  {n:"Mix Veg Pasta",p:269,c:"Pasta"},{n:"Red Sauce Pasta",p:259,c:"Pasta"},{n:"White Sauce Pasta",p:259,c:"Pasta"},
+  {n:"Garlic Bread",p:159,c:"Snacks & Starters"},{n:"Nachos With Cheese",p:229,c:"Snacks & Starters"},{n:"Nuggets",p:179,c:"Snacks & Starters"},{n:"Potato Pops",p:179,c:"Snacks & Starters"},{n:"Veggie Fingers",p:179,c:"Snacks & Starters"},
+  {n:"Masala Cheese Maggi",p:139,c:"Maggi"},{n:"Masala Maggi",p:129,c:"Maggi"},{n:"Paneer Tandoori Maggi",p:159,c:"Maggi"},{n:"Plain Maggi",p:99,c:"Maggi"},{n:"Schezwan Cheese Maggi",p:149,c:"Maggi"},
+  {n:"Banjara Special Paneer Tikka",p:379,c:"Tandoori Starters"},{n:"Creamy Malai Paneer Tikka",p:399,c:"Tandoori Starters"},{n:"Loaded Cheese Paneer Tikka",p:399,c:"Tandoori Starters"},{n:"Mountain Style Pahadi Paneer Tikka",p:379,c:"Tandoori Starters"},{n:"Mushroom Cheese Kebab",p:429,c:"Tandoori Starters"},{n:"Mushroom Tikka",p:379,c:"Tandoori Starters"},{n:"Royal Paneer Seekh Kebab",p:339,c:"Tandoori Starters"},{n:"Signature Hara Bhara Kebab",p:339,c:"Tandoori Starters"},{n:"Smoky Garlic Paneer Tikka",p:399,c:"Tandoori Starters"},{n:"Soya Chaap Tandoori",p:379,c:"Tandoori Starters"},
+  {n:"Blue Candy",p:139,c:"Beverage Menu"},{n:"Blue Orange & Sweet Lime",p:139,c:"Beverage Menu"},{n:"Cad B",p:149,c:"Beverage Menu"},{n:"Chocolate Shake",p:149,c:"Beverage Menu"},{n:"Coffee With Cream",p:119,c:"Beverage Menu"},{n:"Coffee With Crush",p:109,c:"Beverage Menu"},{n:"Coffee With Ice Cream",p:129,c:"Beverage Menu"},{n:"Cold Coffee",p:99,c:"Beverage Menu"},{n:"Green Apple Mint",p:139,c:"Beverage Menu"},{n:"Hot Chocolate",p:109,c:"Beverage Menu"},{n:"Hot Coffee",p:69,c:"Beverage Menu"},{n:"Hot Irish Coffee",p:99,c:"Beverage Menu"},{n:"Irish Coffee",p:129,c:"Beverage Menu"},{n:"Kitkat Shake",p:149,c:"Beverage Menu"},{n:"Mango Shake",p:139,c:"Beverage Menu"},{n:"Mojito Mint",p:139,c:"Beverage Menu"},{n:"Oreo Shake",p:149,c:"Beverage Menu"},{n:"Pista Shake",p:139,c:"Beverage Menu"},{n:"Rose Shake",p:139,c:"Beverage Menu"},{n:"Strawberry Mint",p:139,c:"Beverage Menu"},{n:"Strawberry Shake",p:139,c:"Beverage Menu"},{n:"Thick Coffee",p:119,c:"Beverage Menu"},{n:"Thick Coffee With Crush",p:139,c:"Beverage Menu"},{n:"Thick Coffee With Ice Cream",p:149,c:"Beverage Menu"},{n:"Water Mellon",p:139,c:"Beverage Menu"},
+  {n:"Chilli Garlic Fried Rice",p:199,c:"Chinese Menu"},{n:"Chilli Garlic Noodles",p:179,c:"Chinese Menu"},{n:"Chilli Paneer Dry",p:229,c:"Chinese Menu"},{n:"Corn Fried Rice",p:189,c:"Chinese Menu"},{n:"Crispy Bhel Noodles",p:179,c:"Chinese Menu"},{n:"Crispy Chilli Potato",p:149,c:"Chinese Menu"},{n:"Crispy Corn Chilli Pepper",p:149,c:"Chinese Menu"},{n:"Gobi Chilli Dry",p:189,c:"Chinese Menu"},{n:"Gobi Manchurian Dry",p:189,c:"Chinese Menu"},{n:"Hakka Noodles",p:189,c:"Chinese Menu"},{n:"Honey Chilli Potato",p:189,c:"Chinese Menu"},{n:"Hot N Sour Veg Soup",p:99,c:"Chinese Menu"},{n:"Mohis Special Fried Rice",p:229,c:"Chinese Menu"},{n:"Paneer Hakka Noodles",p:219,c:"Chinese Menu"},{n:"Paneer Manchurian Dry",p:219,c:"Chinese Menu"},{n:"Schezwan Paneer Fried Rice",p:199,c:"Chinese Menu"},{n:"Schezwan Veg Fried Rice",p:189,c:"Chinese Menu"},{n:"Schezwan Veg Noodles",p:219,c:"Chinese Menu"},{n:"Sweet Corn Soup",p:99,c:"Chinese Menu"},{n:"Veg Clear Soup",p:99,c:"Chinese Menu"},{n:"Veg Fried Rice",p:149,c:"Chinese Menu"},{n:"Veg Manchow Soup",p:99,c:"Chinese Menu"},{n:"Veg Manchurian Dry",p:149,c:"Chinese Menu"},{n:"Veg Mohis Noodles",p:229,c:"Chinese Menu"},{n:"Veg Singapore Noodles",p:219,c:"Chinese Menu"},
+  {n:"Butter Garlic Naan",p:69,c:"Roti & Breads"},{n:"Butter Laccha Paratha",p:55,c:"Roti & Breads"},{n:"Butter Naan",p:45,c:"Roti & Breads"},{n:"Butter Roti",p:34,c:"Roti & Breads"},{n:"Chapati",p:25,c:"Roti & Breads"},{n:"Garlic Naan",p:59,c:"Roti & Breads"},{n:"Kulcha (Plain)",p:45,c:"Roti & Breads"},{n:"Kulcha (Stuffed)",p:59,c:"Roti & Breads"},{n:"Laccha Paratha",p:45,c:"Roti & Breads"},{n:"Missi Roti",p:39,c:"Roti & Breads"},{n:"Plain Naan",p:39,c:"Roti & Breads"},{n:"Pudina Paratha",p:49,c:"Roti & Breads"},{n:"Tandoori Roti",p:29,c:"Roti & Breads"}
+];
+ADMIN_MENU.forEach((item,i)=>item.id=i);
+
+let allOrders = [];
+let currentFilter = 'all';
+window.__ordersById = {};
+
+document.getElementById('loginBtn').addEventListener('click', async ()=>{
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass = document.getElementById('loginPass').value;
+  const errEl = document.getElementById('loginErr');
+  try{
+    await window.firebaseLogin(email, pass);
+    errEl.style.display='none';
+  }catch(err){
+    errEl.style.display='block';
+  }
+});
+
+document.getElementById('logoutBtn').addEventListener('click', ()=>{
+  window.firebaseLogout();
+});
+
+document.querySelectorAll('.filter-pill').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.filter-pill').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    currentFilter = btn.dataset.filter;
+    renderFiltered();
+  });
+});
+
+function timeAgo(ts){
+  const diff = Math.floor((Date.now()-ts)/1000);
+  if(diff<60) return 'just now';
+  if(diff<3600) return Math.floor(diff/60)+'m ago';
+  return Math.floor(diff/3600)+'h ago';
+}
+
+function remainingText(order){
+  if(order.status==='preparing' && order.estimatedMinutes && order.preparingAt){
+    const remainMs = order.preparingAt + order.estimatedMinutes*60000 - Date.now();
+    const remainMin = Math.ceil(remainMs/60000);
+    return remainMin>0 ? `~${remainMin}m left` : 'overdue';
+  }
+  return '';
+}
+
+window.renderOrders = function(orders){
+  allOrders = orders;
+  renderFiltered();
+};
+
+function getFiltered(){
+  if(currentFilter==='all') return allOrders.filter(o=>!['served','cancelled'].includes(o.status||'pending'));
+  if(currentFilter==='history') return allOrders.filter(o=>['served','cancelled'].includes(o.status));
+  return allOrders.filter(o=>(o.status||'pending')===currentFilter);
+}
+
+function renderFiltered(){
+  const wrap = document.getElementById('ordersWrap');
+  const countEl = document.getElementById('orderCount');
+  const activeCount = allOrders.filter(o=>!['served','cancelled'].includes(o.status||'pending')).length;
+  const filtered = getFiltered();
+
+  window.__ordersById = {};
+  allOrders.forEach(o=>window.__ordersById[o.id]=o);
+
+  countEl.textContent = `${activeCount} active order${activeCount!==1?'s':''} · ${filtered.length} shown`;
+
+  if(!filtered.length){
+    wrap.innerHTML = `<div class="empty-state">No orders here yet.</div>`;
+    return;
+  }
+
+  wrap.innerHTML = filtered.map(order=>{
+    const itemsHtml = (order.items||[]).map(i=>`
+      <div class="order-item-row"><span>${i.qty}× ${i.name}</span><span>₹${i.qty*i.price}</span></div>
+    `).join('');
+
+    const status = order.status || 'pending';
+    const remain = remainingText(order);
+    const isCancelled = status==='cancelled';
+    const isServed = status==='served';
+    const isHistory = isCancelled || isServed;
+
+    return `
+      <div class="order-card ${isCancelled?'is-cancelled':''}">
+        <div class="order-top">
+          <div>
+            <div class="order-table-lbl">Table</div>
+            <div class="order-table">${order.tableNumber || '—'}</div>
+          </div>
+          <div class="order-time">
+            ${order.createdAt ? timeAgo(order.createdAt) : ''}
+            <div class="order-status status-${status}">${status}</div>
+          </div>
+        </div>
+        <div class="order-name">👤 ${order.customerName || 'Guest'}</div>
+        <div class="order-items">${itemsHtml}</div>
+        <div class="order-total"><span>Total</span><span>₹${order.total||0}</span></div>
+
+        ${!isHistory ? `
+        <div class="status-btns">
+          <button class="status-btn ${status==='pending'?'active':''}" onclick="window.updateOrderStatus('${order.id}','pending')">Pending</button>
+          <button class="status-btn ${status==='preparing'?'active':''}" onclick="window.updateOrderStatus('${order.id}','preparing')">Preparing</button>
+          <button class="status-btn ${status==='ready'?'active':''}" onclick="window.updateOrderStatus('${order.id}','ready')">Ready</button>
+          <button class="status-btn ${status==='served'?'active':''}" onclick="window.updateOrderStatus('${order.id}','served')">Served</button>
+        </div>
+        <div class="time-row">
+          <span class="time-lbl">Prep time</span>
+          <input type="number" min="1" class="time-inp" id="timeInp-${order.id}" value="${order.estimatedMinutes||15}">
+          <button class="time-save-btn" onclick="saveEstimatedTime('${order.id}')">Save</button>
+          ${remain ? `<span class="time-remain">${remain}</span>` : ''}
+        </div>
+        <div class="action-row">
+          <button class="action-btn" onclick="openAddItemsModal('${order.id}')">+ Add Items</button>
+          <button class="action-btn" onclick="printOrder('${order.id}')">🖨 Print</button>
+          <button class="action-btn cancel-btn" onclick="confirmCancel('${order.id}')">Cancel</button>
+        </div>
+        ` : `
+        <div class="action-row">
+          <button class="action-btn" onclick="printOrder('${order.id}')">🖨 Print</button>
+        </div>
+        `}
+      </div>`;
+  }).join('');
+}
+
+/* refresh elapsed / remaining time text periodically without disrupting typing */
+setInterval(()=>{ renderFiltered(); }, 30000);
+
+/* ── STATUS ACTIONS ── */
+function saveEstimatedTime(orderId){
+  const inp = document.getElementById('timeInp-'+orderId);
+  const minutes = parseInt(inp.value,10) || 15;
+  window.setEstimatedTime(orderId, minutes);
+}
+
+function confirmCancel(orderId){
+  if(confirm('Cancel this order? This cannot be undone.')){
+    window.cancelOrder(orderId);
+  }
+}
+
+/* ── PRINT ── */
+function printOrder(orderId){
+  const order = window.__ordersById[orderId];
+  if(!order) return;
+  const itemsHtml = (order.items||[]).map(i=>`
+    <div class="prow"><span>${i.qty} x ${i.name}</span><span>Rs.${i.qty*i.price}</span></div>
+  `).join('');
+  const w = window.open('', '_blank', 'width=380,height=640');
+  w.document.write(`<!DOCTYPE html><html><head><title>Order Receipt</title><style>
+    body{font-family:'Courier New',monospace;padding:16px;width:280px;color:#000;}
+    h2{text-align:center;margin-bottom:2px;font-size:18px;}
+    .sub{text-align:center;font-size:11px;color:#333;margin-bottom:10px;}
+    .line{border-top:1px dashed #000;margin:10px 0;}
+    .row{display:flex;justify-content:space-between;font-size:12px;margin:3px 0;}
+    .prow{display:flex;justify-content:space-between;font-size:13px;margin:4px 0;}
+    .total{font-weight:bold;font-size:15px;}
+    .foot{text-align:center;font-size:11px;margin-top:14px;color:#555;}
+  </style></head><body>
+    <h2>Mohi Cafe</h2>
+    <div class="sub">Pandharpur, Maharashtra</div>
+    <div class="line"></div>
+    <div class="row"><span>Table</span><span>${order.tableNumber||'—'}</span></div>
+    <div class="row"><span>Customer</span><span>${order.customerName||'Guest'}</span></div>
+    <div class="row"><span>Time</span><span>${order.createdAt ? new Date(order.createdAt).toLocaleString() : ''}</span></div>
+    <div class="line"></div>
+    ${itemsHtml}
+    <div class="line"></div>
+    <div class="row total"><span>Total</span><span>Rs.${order.total||0}</span></div>
+    <div class="foot">Thank you for visiting!</div>
+  </body></html>`);
+  w.document.close();
+  setTimeout(()=>{ w.focus(); w.print(); }, 200);
+}
+
+/* ── ADD ITEMS MODAL ── */
+let modalOrderId = null;
+let modalExtra = {};
+
+function openAddItemsModal(orderId){
+  modalOrderId = orderId;
+  modalExtra = {};
+  const order = window.__ordersById[orderId];
+  document.getElementById('modalTableNum').textContent = order ? (order.tableNumber||'—') : '—';
+  document.getElementById('modalSearch').value='';
+  renderModalList('');
+  document.getElementById('addItemsModal').classList.add('open');
+}
+function closeAddItemsModal(){
+  document.getElementById('addItemsModal').classList.remove('open');
+}
+document.getElementById('modalCloseBtn').addEventListener('click', closeAddItemsModal);
+document.getElementById('addItemsModal').addEventListener('click', (e)=>{
+  if(e.target.id==='addItemsModal') closeAddItemsModal();
+});
+
+function renderModalList(q){
+  const list = document.getElementById('modalList');
+  const filtered = ADMIN_MENU.filter(i=>i.n.toLowerCase().includes(q.toLowerCase()));
+  list.innerHTML = filtered.map(item=>{
+    const qty = modalExtra[item.id]||0;
+    return `<div class="modal-item">
+      <div>
+        <div class="modal-item-name">${item.n}</div>
+        <div class="modal-item-price">₹${item.p}</div>
+      </div>
+      <div class="modal-item-ctrl" data-id="${item.id}">
+        ${qty===0
+          ? `<button class="madd-btn">Add</button>`
+          : `<div class="mqctrl"><button class="mqbtn mminus">−</button><span class="mqnum">${qty}</span><button class="mqbtn mplus">+</button></div>`}
+      </div>
+    </div>`;
+  }).join('');
+
+  list.querySelectorAll('.modal-item-ctrl').forEach(el=>{
+    const id = el.dataset.id;
+    const addBtn = el.querySelector('.madd-btn');
+    const minus = el.querySelector('.mminus');
+    const plus = el.querySelector('.mplus');
+    if(addBtn) addBtn.addEventListener('click', ()=>{ modalExtra[id]=1; renderModalList(document.getElementById('modalSearch').value); });
+    if(minus) minus.addEventListener('click', ()=>{ modalExtra[id]--; if(modalExtra[id]<=0) delete modalExtra[id]; renderModalList(document.getElementById('modalSearch').value); });
+    if(plus) plus.addEventListener('click', ()=>{ modalExtra[id]++; renderModalList(document.getElementById('modalSearch').value); });
+  });
+  updateModalTotal();
+}
+
+function updateModalTotal(){
+  const total = Object.entries(modalExtra).reduce((s,[id,q])=>{
+    const item = ADMIN_MENU.find(m=>m.id==id);
+    return s + (item ? q*item.p : 0);
+  }, 0);
+  document.getElementById('modalTotal').textContent = `₹${total} selected`;
+}
+
+document.getElementById('modalSearch').addEventListener('input', e=>renderModalList(e.target.value));
+
+document.getElementById('modalAddBtn').addEventListener('click', async ()=>{
+  if(!Object.keys(modalExtra).length){ closeAddItemsModal(); return; }
+  const order = window.__ordersById[modalOrderId];
+  if(!order){ closeAddItemsModal(); return; }
+  const items = (order.items||[]).map(i=>({...i}));
+  Object.entries(modalExtra).forEach(([id,qty])=>{
+    const menuItem = ADMIN_MENU.find(m=>m.id==id);
+    if(!menuItem) return;
+    const existing = items.find(i=>i.name===menuItem.n);
+    if(existing) existing.qty += qty;
+    else items.push({name:menuItem.n, price:menuItem.p, qty});
+  });
+  const newTotal = items.reduce((s,i)=>s+i.qty*i.price,0);
+  await window.addItemsToOrder(modalOrderId, items, newTotal);
+  closeAddItemsModal();
+});
+</script>
+</body>
+</html>
