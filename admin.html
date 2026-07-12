@@ -427,7 +427,7 @@ function renderFiltered(){
         ${!isHistory ? `
         <div class="status-btns">
           <button class="status-btn ${status==='pending'?'active':''}" onclick="window.updateOrderStatus('${order.id}','pending')">Pending</button>
-          <button class="status-btn ${status==='preparing'?'active':''}" onclick="window.updateOrderStatus('${order.id}','preparing')">Preparing</button>
+          <button class="status-btn ${status==='preparing'?'active':''}" onclick="startPreparing('${order.id}')">Preparing</button>
           <button class="status-btn ${status==='ready'?'active':''}" onclick="window.updateOrderStatus('${order.id}','ready')">Ready</button>
           <button class="status-btn ${status==='served'?'active':''}" onclick="window.updateOrderStatus('${order.id}','served')">Served</button>
         </div>
@@ -459,6 +459,15 @@ function saveEstimatedTime(orderId){
   const inp = document.getElementById('timeInp-'+orderId);
   const minutes = parseInt(inp.value,10) || 15;
   window.setEstimatedTime(orderId, minutes);
+}
+
+// One-tap "Preparing": sets status AND starts the reverse timer using whatever
+// minutes are currently in the box (defaults to 15 if untouched).
+async function startPreparing(orderId){
+  const inp = document.getElementById('timeInp-'+orderId);
+  const minutes = (inp && parseInt(inp.value,10)) || 15;
+  await window.updateOrderStatus(orderId, 'preparing');
+  await window.setEstimatedTime(orderId, minutes); // stamps preparingAt = now, starts countdown
 }
 
 function confirmCancel(orderId){
