@@ -202,6 +202,11 @@ body{
   padding:13px 16px;border-bottom:1px solid #f0f0f0;background:#fff;
 }
 .mitem:last-child{border-bottom:none;}
+.minfo{flex:1;min-width:0;}
+.mname{font-size:14px;font-weight:600;color:#0a0a0a;margin-bottom:3px;}
+.mprice{font-size:12px;color:#bbb;font-weight:500;}
+.vegbox{width:12px;height:12px;border:1.5px solid #bbb;border-radius:2px;flex-shrink:0;}
+.ictrl{display:flex;align-items:center;}
 .addbtn{
   border:1.5px solid #0a0a0a;background:#fff;color:#0a0a0a;
   border-radius:8px;padding:7px 15px;font-size:13px;font-weight:700;
@@ -693,6 +698,40 @@ function updateDot(){
 /* ── CART ITEMS HELPER ── */
 function getItems(){
   return Object.entries(cart).map(([id,qty])=>({...MENU.find(m=>m.id==id),qty}));
+}
+
+/* ── RENDER ITEM CONTROLS ── */
+function renderCtrl(el, itemId){
+  const qty = cart[itemId] || 0;
+  if(qty === 0){
+    el.innerHTML = `<button class="addbtn">Add</button>`;
+    el.querySelector('.addbtn').addEventListener('click', e => {
+      e.stopPropagation();
+      cart[itemId] = 1;
+      updateDot();
+      renderMenu(document.getElementById('searchInput').value);
+    });
+  } else {
+    el.innerHTML = `
+      <div class="qctrl">
+        <button class="qbtn minus">−</button>
+        <span class="qnum">${qty}</span>
+        <button class="qbtn plus">+</button>
+      </div>`;
+    el.querySelector('.minus').addEventListener('click', e => {
+      e.stopPropagation();
+      cart[itemId]--;
+      if(cart[itemId] <= 0) delete cart[itemId];
+      updateDot();
+      renderMenu(document.getElementById('searchInput').value);
+    });
+    el.querySelector('.plus').addEventListener('click', e => {
+      e.stopPropagation();
+      cart[itemId]++;
+      updateDot();
+      renderMenu(document.getElementById('searchInput').value);
+    });
+  }
 }
 
 /* ── RENDER CART PAGE ── */
