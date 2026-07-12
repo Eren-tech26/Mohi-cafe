@@ -830,7 +830,6 @@ function buildWALink(){
   const total=items.reduce((s,i)=>s+i.qty*i.p,0);
   const name=nameEl?nameEl.value.trim():'';
   let msg=`🍽️ New Order — Mohi Cafe\n👤 Name: ${name||'(not entered)'}\n\n`;
-  items.forEach(i=>`${msg}${i.qty}× ${i.n} — ₹${i.qty*i.p}\n`);
   items.forEach(i=>{msg+=`${i.qty}× ${i.n} — ₹${i.qty*i.p}\n`;});
   msg+=`\n💰 Total: ₹${total}`;
   waBtn.href=`https://wa.me/${WA}?text=${encodeURIComponent(msg)}`;
