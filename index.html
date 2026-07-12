@@ -365,6 +365,7 @@ body{
 }
 .trk-card.trk-ready .trk-time{background:#fff0e0;color:#b85c00;}
 .trk-card.trk-cancelled .trk-time{background:#ffe5e5;color:#c0392b;}
+.trk-countdown{font-variant-numeric:tabular-nums;font-weight:900;}
 .trk-items{border-top:1px dashed #eee;padding-top:8px;margin-bottom:8px;}
 .trk-item-row{display:flex;justify-content:space-between;font-size:12.5px;padding:2px 0;color:#555;}
 .trk-total{
@@ -831,7 +832,7 @@ function renderCtrl(el, itemId){
       e.stopPropagation();
       cart[itemId] = 1;
       updateDot();
-      renderCtrl(el, itemId);
+      renderMenu(document.getElementById('searchInput').value);
     });
   } else {
     el.innerHTML = `
@@ -845,18 +846,25 @@ function renderCtrl(el, itemId){
       cart[itemId]--;
       if(cart[itemId] <= 0) delete cart[itemId];
       updateDot();
-      renderCtrl(el, itemId);
+      renderMenu(document.getElementById('searchInput').value);
     });
     el.querySelector('.plus').addEventListener('click', e => {
       e.stopPropagation();
       cart[itemId]++;
       updateDot();
-      renderCtrl(el, itemId);
+      renderMenu(document.getElementById('searchInput').value);
     });
   }
 }
 
 /* ── ORDER TRACKER CARD (Zomato-style) ── */
+function formatMMSS(ms){
+  const totalSec = Math.max(0, Math.round(ms/1000));
+  const m = Math.floor(totalSec/60);
+  const s = totalSec%60;
+  return `${m}:${s<10?'0':''}${s}`;
+}
+
 function trackedOrderCard(o){
   const steps=['pending','preparing','ready'];
   const status=o.status||'pending';
@@ -864,14 +872,20 @@ function trackedOrderCard(o){
   const idx = cancelled ? -1 : steps.indexOf(status);
 
   let timeText='';
+  let showLiveTimer=false;
   if(cancelled){
     timeText = '❌ This order was cancelled by the cafe';
   } else if(status==='ready'){
     timeText = '🎉 Ready! Please collect at your table';
   } else if(status==='preparing'){
     if(o.estimatedMinutes && o.preparingAt){
-      const remainMin = Math.ceil((o.preparingAt + o.estimatedMinutes*60000 - Date.now())/60000);
-      timeText = remainMin>0 ? `👨‍🍳 Preparing · ~${remainMin} min left` : '👨‍🍳 Preparing · almost ready';
+      const remainMs = o.preparingAt + o.estimatedMinutes*60000 - Date.now();
+      if(remainMs>0){
+        showLiveTimer=true;
+        timeText = `👨‍🍳 Preparing · <span class="trk-countdown" data-target="${o.preparingAt + o.estimatedMinutes*60000}">${formatMMSS(remainMs)}</span> left`;
+      } else {
+        timeText = '👨‍🍳 Preparing · almost ready';
+      }
     } else {
       timeText = '👨‍🍳 Your order is being prepared';
     }
@@ -1062,12 +1076,23 @@ function buildWALink(){
   waBtn.href=`https://wa.me/${WA}?text=${encodeURIComponent(msg)}`;
 }
 
-/* Refresh countdown text periodically while cart tab is open */
+/* Live reverse timer — ticks every second, updates countdown spans in place
+   (no full re-render, so it doesn't interrupt scrolling/typing). Falls back to
+   a full renderCartPage() whenever an order's phase actually needs to change
+   (e.g. hits 0 → "almost ready"). */
 setInterval(()=>{
-  if(document.getElementById('page-cart').classList.contains('active') && Object.keys(trackedOrders).length){
-    renderCartPage();
-  }
-}, 20000);
+  if(!document.getElementById('page-cart').classList.contains('active')) return;
+  const spans = document.querySelectorAll('.trk-countdown');
+  if(!spans.length) return;
+  let needsRerender=false;
+  spans.forEach(span=>{
+    const target = parseInt(span.dataset.target,10);
+    const remainMs = target - Date.now();
+    if(remainMs<=0){ needsRerender=true; return; }
+    span.textContent = formatMMSS(remainMs);
+  });
+  if(needsRerender) renderCartPage();
+}, 1000);
 
 /* Start listening for any previously-placed active orders once Firebase is ready */
 window.addEventListener('load', () => { startTracking(); });
