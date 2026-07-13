@@ -132,6 +132,24 @@ body{font-family:'Inter',system-ui,sans-serif;background:#f7f7f7;color:#0a0a0a;m
 }
 .filter-pill.active{background:#0a0a0a;border-color:#0a0a0a;color:#fff;}
 
+.history-bar{
+  display:flex;align-items:center;gap:10px;padding:12px 20px;
+  background:#fff;border-bottom:1px solid #eee;flex-wrap:wrap;
+}
+.hist-select{
+  border:1.5px solid #e8e8e8;border-radius:8px;padding:8px 10px;
+  font-size:12.5px;font-weight:600;font-family:'Inter',sans-serif;
+  color:#333;background:#fff;outline:none;cursor:pointer;
+}
+.hist-select:focus{border-color:#0a0a0a;}
+.hist-count{font-size:11.5px;color:#bbb;font-weight:600;margin-left:auto;}
+
+.date-group-hd{
+  grid-column:1/-1;font-size:11.5px;font-weight:800;letter-spacing:0.5px;
+  text-transform:uppercase;color:#999;padding:14px 4px 4px;
+}
+.date-group-hd:first-child{padding-top:0;}
+
 .orders-wrap{padding:16px;display:grid;gap:14px;grid-template-columns:1fr;}
 @media(min-width:720px){
   .orders-wrap{grid-template-columns:repeat(2,1fr);}
@@ -282,6 +300,12 @@ body{font-family:'Inter',system-ui,sans-serif;background:#f7f7f7;color:#0a0a0a;m
     <button class="filter-pill" data-filter="history">History</button>
   </div>
 
+  <div class="history-bar" id="historyBar" style="display:none;">
+    <select class="hist-select" id="histYear"><option value="all">All Years</option></select>
+    <select class="hist-select" id="histMonth"><option value="all">All Months</option></select>
+    <span class="hist-count" id="histCount"></span>
+  </div>
+
   <div class="orders-wrap" id="ordersWrap"></div>
 </div>
 
@@ -350,9 +374,38 @@ document.querySelectorAll('.filter-pill').forEach(btn=>{
     document.querySelectorAll('.filter-pill').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
     currentFilter = btn.dataset.filter;
+    document.getElementById('historyBar').style.display = currentFilter==='history' ? 'flex' : 'none';
+    if(currentFilter==='history') populateHistoryDropdowns();
     renderFiltered();
   });
 });
+
+const MONTH_NAMES=['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function populateHistoryDropdowns(){
+  const yearSel=document.getElementById('histYear');
+  const monthSel=document.getElementById('histMonth');
+  const histOrders = allOrders.filter(o=>['served','cancelled'].includes(o.status));
+  const years=[...new Set(histOrders.map(o=>new Date(o.createdAt).getFullYear()))].sort((a,b)=>b-a);
+  const prevYear=yearSel.value;
+  yearSel.innerHTML='<option value="all">All Years</option>'+years.map(y=>`<option value="${y}">${y}</option>`).join('');
+  if(years.includes(parseInt(prevYear))) yearSel.value=prevYear;
+  refreshMonthOptions();
+}
+
+function refreshMonthOptions(){
+  const yearSel=document.getElementById('histYear').value;
+  const monthSel=document.getElementById('histMonth');
+  let histOrders = allOrders.filter(o=>['served','cancelled'].includes(o.status));
+  if(yearSel!=='all') histOrders = histOrders.filter(o=>new Date(o.createdAt).getFullYear()===parseInt(yearSel));
+  const months=[...new Set(histOrders.map(o=>new Date(o.createdAt).getMonth()))].sort((a,b)=>a-b);
+  const prevMonth=monthSel.value;
+  monthSel.innerHTML='<option value="all">All Months</option>'+months.map(m=>`<option value="${m}">${MONTH_NAMES[m]}</option>`).join('');
+  if(months.includes(parseInt(prevMonth))) monthSel.value=prevMonth;
+}
+
+document.getElementById('histYear').addEventListener('change', ()=>{ refreshMonthOptions(); renderFiltered(); });
+document.getElementById('histMonth').addEventListener('change', renderFiltered);
 
 function timeAgo(ts){
   const diff = Math.floor((Date.now()-ts)/1000);
@@ -377,7 +430,14 @@ window.renderOrders = function(orders){
 
 function getFiltered(){
   if(currentFilter==='all') return allOrders.filter(o=>!['served','cancelled'].includes(o.status||'pending'));
-  if(currentFilter==='history') return allOrders.filter(o=>['served','cancelled'].includes(o.status));
+  if(currentFilter==='history'){
+    let hist = allOrders.filter(o=>['served','cancelled'].includes(o.status));
+    const yearSel = document.getElementById('histYear').value;
+    const monthSel = document.getElementById('histMonth').value;
+    if(yearSel!=='all') hist = hist.filter(o=>new Date(o.createdAt).getFullYear()===parseInt(yearSel));
+    if(monthSel!=='all') hist = hist.filter(o=>new Date(o.createdAt).getMonth()===parseInt(monthSel));
+    return hist.sort((a,b)=>b.createdAt-a.createdAt);
+  }
   return allOrders.filter(o=>(o.status||'pending')===currentFilter);
 }
 
@@ -391,13 +451,24 @@ function renderFiltered(){
   allOrders.forEach(o=>window.__ordersById[o.id]=o);
 
   countEl.textContent = `${activeCount} active order${activeCount!==1?'s':''} · ${filtered.length} shown`;
+  document.getElementById('histCount').textContent = currentFilter==='history' ? `${filtered.length} order${filtered.length!==1?'s':''}` : '';
 
   if(!filtered.length){
     wrap.innerHTML = `<div class="empty-state">No orders here yet.</div>`;
     return;
   }
 
-  wrap.innerHTML = filtered.map(order=>{
+  function dateLabel(ts){
+    const d = new Date(ts);
+    const today = new Date();
+    const yest = new Date(); yest.setDate(yest.getDate()-1);
+    const sameDay=(a,b)=>a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+    if(sameDay(d,today)) return 'Today';
+    if(sameDay(d,yest)) return 'Yesterday';
+    return d.toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'});
+  }
+
+  function orderCardHtml(order){
     const itemsHtml = (order.items||[]).map(i=>`
       <div class="order-item-row"><span>${i.qty}× ${i.name}</span><span>₹${i.qty*i.price}</span></div>
     `).join('');
@@ -448,7 +519,24 @@ function renderFiltered(){
         </div>
         `}
       </div>`;
-  }).join('');
+  }
+
+  if(currentFilter==='history'){
+    // Group by date, newest first, with a header before each new day
+    let html='';
+    let lastLabel=null;
+    filtered.forEach(order=>{
+      const label = dateLabel(order.createdAt);
+      if(label!==lastLabel){
+        html += `<div class="date-group-hd">${label}</div>`;
+        lastLabel = label;
+      }
+      html += orderCardHtml(order);
+    });
+    wrap.innerHTML = html;
+  } else {
+    wrap.innerHTML = filtered.map(orderCardHtml).join('');
+  }
 }
 
 /* refresh elapsed / remaining time text periodically without disrupting typing */
