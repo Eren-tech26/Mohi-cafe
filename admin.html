@@ -10,7 +10,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
   import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
-  import { getFirestore, collection, onSnapshot, doc, updateDoc, orderBy, query } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+  import { getFirestore, collection, onSnapshot, doc, updateDoc, deleteDoc, orderBy, query } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
   // ⚠️ REPLACE THESE VALUES with your own Firebase project config (same as customer.html)
   const firebaseConfig = {
@@ -81,6 +81,19 @@
   window.addItemsToOrder = async (orderId, items, total) => {
     await updateDoc(doc(db,'orders',orderId), { items, total });
   };
+
+  // Permanently delete a single history order (served/cancelled only — never call on a live order)
+  window.deleteOrder = async (orderId) => {
+    await deleteDoc(doc(db,'orders',orderId));
+  };
+
+  // Permanently delete every served/cancelled order older than a given number of days.
+  // Takes the already-filtered list of order objects (id + createdAt) to delete.
+  window.deleteOrdersBulk = async (orderIds) => {
+    for(const id of orderIds){
+      await deleteDoc(doc(db,'orders',id));
+    }
+  };
 </script>
 
 <style>
@@ -143,6 +156,47 @@ body{font-family:'Inter',system-ui,sans-serif;background:#f7f7f7;color:#0a0a0a;m
 }
 .hist-select:focus{border-color:#0a0a0a;}
 .hist-count{font-size:11.5px;color:#bbb;font-weight:600;margin-left:auto;}
+.clear-hist-btn{
+  border:1.5px solid #ffd6d6;background:#fff8f8;color:#e53935;
+  border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;
+  cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;
+}
+.del-order-btn{
+  border:1.5px solid #ffd6d6;background:#fff8f8;color:#e53935;
+  border-radius:8px;padding:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;
+}
+
+/* ── DELETE CONFIRM MODAL ── */
+.confirm-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:300;
+  display:none;align-items:center;justify-content:center;padding:24px;
+}
+.confirm-overlay.open{display:flex;}
+.confirm-card{
+  background:#fff;border-radius:18px;padding:24px;max-width:360px;width:100%;
+}
+.confirm-title{font-size:16px;font-weight:800;margin-bottom:8px;color:#c0392b;}
+.confirm-body{font-size:13px;color:#666;line-height:1.5;margin-bottom:16px;}
+.confirm-body b{color:#0a0a0a;}
+.confirm-inp{
+  width:100%;border:1.5px solid #e8e8e8;border-radius:10px;padding:12px 14px;
+  font-size:14px;font-family:'Inter',sans-serif;outline:none;margin-bottom:14px;
+}
+.confirm-inp:focus{border-color:#e53935;}
+.confirm-btns{display:flex;gap:10px;}
+.confirm-cancel-btn{
+  flex:1;padding:12px;border-radius:10px;border:1.5px solid #e8e8e8;background:#fff;
+  color:#555;font-size:13px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;
+}
+.confirm-delete-btn{
+  flex:1;padding:12px;border-radius:10px;border:none;background:#c0c0c0;
+  color:#fff;font-size:13px;font-weight:700;cursor:not-allowed;font-family:'Inter',sans-serif;
+}
+.confirm-delete-btn.ready{background:#e53935;cursor:pointer;}
+.range-select{
+  width:100%;border:1.5px solid #e8e8e8;border-radius:10px;padding:12px 14px;
+  font-size:14px;font-family:'Inter',sans-serif;outline:none;margin-bottom:14px;background:#fff;
+}
 
 .date-group-hd{
   grid-column:1/-1;font-size:11.5px;font-weight:800;letter-spacing:0.5px;
@@ -303,6 +357,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#f7f7f7;color:#0a0a0a;m
   <div class="history-bar" id="historyBar" style="display:none;">
     <select class="hist-select" id="histYear"><option value="all">All Years</option></select>
     <select class="hist-select" id="histMonth"><option value="all">All Months</option></select>
+    <button class="clear-hist-btn" id="clearHistBtn">🗑 Clear Old</button>
     <span class="hist-count" id="histCount"></span>
   </div>
 
@@ -321,6 +376,26 @@ body{font-family:'Inter',system-ui,sans-serif;background:#f7f7f7;color:#0a0a0a;m
     <div class="modal-footer">
       <div class="modal-total" id="modalTotal">₹0 selected</div>
       <button class="modal-add-btn" id="modalAddBtn">Add to Order</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── DELETE CONFIRM MODAL ── -->
+<div class="confirm-overlay" id="confirmOverlay">
+  <div class="confirm-card">
+    <div class="confirm-title" id="confirmTitle">Delete history?</div>
+    <div class="confirm-body" id="confirmBody">This permanently deletes the selected order(s). This cannot be undone.</div>
+    <select class="range-select" id="rangeSelect" style="display:none;">
+      <option value="30">Older than 30 days</option>
+      <option value="60">Older than 60 days</option>
+      <option value="90">Older than 90 days</option>
+      <option value="0">Everything in History</option>
+    </select>
+    <div class="confirm-body">Type <b>DELETE</b> below to confirm.</div>
+    <input class="confirm-inp" id="confirmInp" placeholder="Type DELETE">
+    <div class="confirm-btns">
+      <button class="confirm-cancel-btn" id="confirmCancelBtn">Cancel</button>
+      <button class="confirm-delete-btn" id="confirmDeleteBtn">Delete</button>
     </div>
   </div>
 </div>
@@ -516,6 +591,7 @@ function renderFiltered(){
         ` : `
         <div class="action-row">
           <button class="action-btn" onclick="printOrder('${order.id}')">🖨 Print</button>
+          <button class="del-order-btn" onclick="confirmDeleteSingle('${order.id}')">🗑 Delete</button>
         </div>
         `}
       </div>`;
@@ -563,6 +639,88 @@ function confirmCancel(orderId){
     window.cancelOrder(orderId);
   }
 }
+
+/* ── DELETE HISTORY (single + bulk by date range) ── */
+let pendingDeleteMode = null; // 'single' | 'bulk'
+let pendingDeleteOrderId = null;
+
+function openConfirmModal(mode){
+  pendingDeleteMode = mode;
+  const title = document.getElementById('confirmTitle');
+  const body = document.getElementById('confirmBody');
+  const rangeSelect = document.getElementById('rangeSelect');
+  const inp = document.getElementById('confirmInp');
+  const delBtn = document.getElementById('confirmDeleteBtn');
+
+  inp.value='';
+  delBtn.classList.remove('ready');
+
+  if(mode==='single'){
+    title.textContent = 'Delete this order?';
+    body.textContent = 'This permanently deletes this order from history. This cannot be undone.';
+    rangeSelect.style.display = 'none';
+  } else {
+    title.textContent = 'Clear old history?';
+    body.textContent = 'This permanently deletes matching orders from history. This cannot be undone.';
+    rangeSelect.style.display = 'block';
+  }
+
+  document.getElementById('confirmOverlay').classList.add('open');
+  inp.focus();
+}
+
+function closeConfirmModal(){
+  document.getElementById('confirmOverlay').classList.remove('open');
+  pendingDeleteMode = null;
+  pendingDeleteOrderId = null;
+}
+
+function confirmDeleteSingle(orderId){
+  pendingDeleteOrderId = orderId;
+  openConfirmModal('single');
+}
+
+document.getElementById('clearHistBtn').addEventListener('click', ()=>openConfirmModal('bulk'));
+document.getElementById('confirmCancelBtn').addEventListener('click', closeConfirmModal);
+document.getElementById('confirmOverlay').addEventListener('click', (e)=>{
+  if(e.target.id==='confirmOverlay') closeConfirmModal();
+});
+
+document.getElementById('confirmInp').addEventListener('input', (e)=>{
+  const delBtn = document.getElementById('confirmDeleteBtn');
+  if(e.target.value.trim().toUpperCase()==='DELETE') delBtn.classList.add('ready');
+  else delBtn.classList.remove('ready');
+});
+
+document.getElementById('confirmDeleteBtn').addEventListener('click', async ()=>{
+  const inp = document.getElementById('confirmInp');
+  if(inp.value.trim().toUpperCase()!=='DELETE') return; // guard against Enter-key bypass
+
+  const delBtn = document.getElementById('confirmDeleteBtn');
+  delBtn.disabled = true;
+  delBtn.textContent = 'Deleting…';
+
+  try{
+    if(pendingDeleteMode==='single'){
+      await window.deleteOrder(pendingDeleteOrderId);
+    } else {
+      const days = parseInt(document.getElementById('rangeSelect').value,10);
+      const cutoff = days===0 ? Infinity : Date.now() - days*86400000;
+      const toDelete = allOrders.filter(o=>
+        ['served','cancelled'].includes(o.status) &&
+        (days===0 || o.createdAt < cutoff)
+      ).map(o=>o.id);
+      await window.deleteOrdersBulk(toDelete);
+    }
+  } catch(err){
+    console.error(err);
+    alert('Something went wrong deleting. Please try again.');
+  }
+
+  delBtn.disabled = false;
+  delBtn.textContent = 'Delete';
+  closeConfirmModal();
+});
 
 /* ── PRINT ── */
 function printOrder(orderId){
@@ -678,3 +836,4 @@ document.getElementById('modalAddBtn').addEventListener('click', async ()=>{
 </script>
 </body>
 </html>
+
